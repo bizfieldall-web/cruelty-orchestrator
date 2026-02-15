@@ -1,0 +1,100 @@
+# Cruelty Orchestrator - 파이프라인 설정
+
+pipeline:
+  name: "콘텐츠 생산 파이프라인"
+  version: "1.0.0"
+
+# 운영 주기
+schedule:
+  daily:
+    formats: [shorts, blog, brunch]
+    description: "매일 동일 주제로 3개 포맷 생성"
+  weekly:
+    formats: [longform]
+    description: "7일치 쇼츠를 종합 분석"
+    day: sunday  # 주간 롱폼 생성 요일
+
+# 파이프라인 단계 정의
+stages:
+  - id: gemini-master
+    agent: gemini
+    role: "조율/발굴/탐색"
+    prompt_files:
+      - prompts/gemini/01-master.md
+      - prompts/gemini/02-discovery.md
+      - prompts/gemini/03-exploration.md
+
+  - id: perplexity-verify
+    agent: perplexity
+    role: "팩트 검증"
+    depends_on: [gemini-master]
+    prompt_files:
+      - prompts/perplexity/01-verification.md
+
+  - id: notebooklm-process
+    agent: notebooklm
+    role: "데이터 가공"
+    depends_on: [perplexity-verify]
+    prompt_files:
+      - prompts/notebooklm/01-processing.md
+
+  - id: gpt-enrich
+    agent: gpt
+    role: "데이터 풍성화"
+    depends_on: [notebooklm-process, gemini-master, perplexity-verify]
+    prompt_files:
+      - prompts/gpt/01-enrichment.md
+
+  - id: claude-script
+    agent: claude
+    role: "대본/글 작성"
+    depends_on: [gpt-enrich]
+    prompt_files:
+      - prompts/claude/01-shorts-script.md
+      - prompts/claude/02-blog.md
+      - prompts/claude/03-brunch.md
+      - prompts/claude/04-longform.md
+
+  - id: gemini-nanobanana
+    agent: gemini
+    role: "이미지 프롬프트 생성"
+    depends_on: [claude-script]
+    prompt_files:
+      - prompts/gemini/04-nanobanana.md
+
+  - id: genspark-image
+    agent: genspark
+    role: "이미지 생성"
+    depends_on: [gemini-nanobanana]
+    prompt_files:
+      - prompts/genspark/01-image-gen.md
+
+  - id: vrew-video
+    agent: vrew
+    role: "영상 편집"
+    depends_on: [claude-script, genspark-image]
+    prompt_files:
+      - prompts/vrew/01-video-edit.md
+
+# 출력 포맷 설정
+output_formats:
+  shorts:
+    char_limit: 600
+    tone: "직설적, 임팩트, 구어체"
+    spec_file: docs/output-formats.md
+
+  blog:
+    char_range: [1500, 2500]
+    tone: "정보 전달형, 친근하되 신뢰감"
+    spec_file: docs/output-formats.md
+
+  brunch:
+    char_range: [1500, 2500]
+    tone: "에세이, 사색적, 1인칭"
+    spec_file: docs/output-formats.md
+
+  longform:
+    char_range: [5000, 8000]
+    tone: "분석적, 전문가 시점"
+    video_length: "10-15분"
+    spec_file: docs/output-formats.md
