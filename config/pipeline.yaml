@@ -2,13 +2,13 @@
 
 pipeline:
   name: "콘텐츠 생산 파이프라인"
-  version: "1.0.0"
+  version: "2.0.0"
 
 # 운영 주기
 schedule:
   daily:
-    formats: [shorts, blog, brunch]
-    description: "매일 동일 주제로 3개 포맷 생성"
+    formats: [shorts, blog, brunch, steemit, x, threads]
+    description: "매일 동일 주제로 6개 포맷 생성"
   weekly:
     formats: [longform]
     description: "7일치 쇼츠를 종합 분석"
@@ -47,13 +47,23 @@ stages:
 
   - id: claude-script
     agent: claude
-    role: "대본/글 작성"
+    role: "대본/글 작성 (6개 포맷)"
     depends_on: [gpt-enrich]
     prompt_files:
       - prompts/claude/01-shorts-script.md
       - prompts/claude/02-blog.md
       - prompts/claude/03-brunch.md
       - prompts/claude/04-longform.md
+      - prompts/claude/06-steemit.md
+      - prompts/claude/07-x.md
+      - prompts/claude/08-threads.md
+
+  - id: notion-save
+    agent: notion
+    role: "Notion 저장 (점검 대기)"
+    depends_on: [claude-script]
+    description: "6개 포맷 산출물을 Notion 데이터베이스에 저장. 연구소장 점검 대기."
+    workflow_file: docs/notion-workflow.md
 
   - id: gemini-nanobanana
     agent: gemini
@@ -76,6 +86,12 @@ stages:
     prompt_files:
       - prompts/vrew/01-video-edit.md
 
+  - id: review-publish
+    agent: human
+    role: "연구소장 점검 & 최종 게시 명령"
+    depends_on: [notion-save, genspark-image]
+    description: "Notion에서 전체 산출물 점검 후 게시 승인"
+
 # 출력 포맷 설정
 output_formats:
   shorts:
@@ -93,8 +109,37 @@ output_formats:
     tone: "에세이, 사색적, 1인칭"
     spec_file: docs/output-formats.md
 
+  steemit:
+    char_range: [1000, 2000]
+    tone: "데이터 기반 분석, 글로벌 인사이트"
+    spec_file: docs/output-formats.md
+
+  x:
+    format: "thread"
+    tweets: [5, 7]
+    char_per_tweet: 280
+    tone: "펀치, 한 문장이 무기"
+    spec_file: docs/output-formats.md
+
+  threads:
+    format: "post"
+    posts: [1, 3]
+    char_per_post: 500
+    tone: "대화형, 날카로운 관점"
+    spec_file: docs/output-formats.md
+
   longform:
     char_range: [5000, 8000]
     tone: "분석적, 전문가 시점"
     video_length: "10-15분"
     spec_file: docs/output-formats.md
+
+# Notion 저장 설정
+notion:
+  storage:
+    structure: "날짜_기업명 > 포맷별 하위페이지"
+    formats: [shorts, blog, brunch, steemit, x, threads]
+    includes: [content, images, metadata]
+  workflow:
+    spec_file: docs/notion-workflow.md
+    process: "생성 → Notion 저장 → 연구소장 점검 → 최종 게시"
