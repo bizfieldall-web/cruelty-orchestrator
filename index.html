@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>이미지 슬라이딩 퍼즐</title>
+  <style>
+    :root {
+      --tile-size: min(16vw, 92px);
+      --gap: 6px;
+      --panel: rgba(255, 255, 255, 0.92);
+      --ink: #0f172a;
+      --primary: #4f46e5;
+      --empty: #c7d2fe;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+      background: linear-gradient(135deg, #dbeafe, #ede9fe);
+      color: var(--ink);
+      padding: 16px;
+    }
+    .app {
+      width: min(96vw, 760px);
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 18px 45px rgba(79, 70, 229, 0.2);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.35rem; }
+    .desc { margin: 0 0 14px; font-size: 0.95rem; line-height: 1.45; }
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .toolbar label { font-size: 0.85rem; color: #334155; display: block; margin-bottom: 2px; }
+    .toolbar input, .toolbar select, .toolbar button {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      padding: 9px 10px;
+      font-size: 0.9rem;
+      background: #fff;
+    }
+    .toolbar button {
+      border: none;
+      color: #fff;
+      font-weight: 700;
+      background: var(--primary);
+      cursor: pointer;
+    }
+    .toolbar button.secondary { background: #334155; }
+
+    .board-wrap { display: grid; place-items: center; }
+    .board {
+      margin: 0 auto;
+      display: grid;
+      gap: var(--gap);
+      width: fit-content;
+      touch-action: manipulation;
+      background: #e2e8f0;
+      border-radius: 10px;
+      padding: 6px;
+    }
+    .tile {
+      width: var(--tile-size);
+      height: var(--tile-size);
+      border: none;
+      border-radius: 8px;
+      background-color: #312e81;
+      background-repeat: no-repeat;
+      cursor: pointer;
+      box-shadow: 0 2px 9px rgba(30, 41, 59, 0.25);
+      transition: transform 0.08s ease;
+    }
+    .tile:active { transform: scale(0.97); }
+    .tile.empty {
+      background: repeating-linear-gradient(45deg, var(--empty), var(--empty) 8px, #e0e7ff 8px, #e0e7ff 16px);
+      box-shadow: inset 0 0 0 2px rgba(99, 102, 241, 0.45);
+      cursor: default;
+    }
+
+    .status { margin-top: 14px; min-height: 1.2em; font-weight: 700; }
+    .meta { margin-top: 8px; color: #334155; font-size: 0.92rem; }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1>이미지 슬라이딩 퍼즐</h1>
+    <p class="desc">기본 제공 이미지(요청 주신 사진 스타일 테스트용)로 바로 플레이할 수 있고, 나중에는 원하는 이미지를 업로드해 퍼즐을 만들 수 있어요. 빈칸 옆 조각만 이동 가능합니다.</p>
+
+    <div class="toolbar">
+      <div>
+        <label for="sizeSelect">퍼즐 크기</label>
+        <select id="sizeSelect" aria-label="퍼즐 크기 선택">
+          <option value="3x3">3 × 3 (8칸 + 빈칸)</option>
+          <option value="4x4">4 × 4 (15칸 + 빈칸)</option>
+          <option value="5x4" selected>5 × 4 (19칸 + 빈칸)</option>
+          <option value="5x5">5 × 5 (24칸 + 빈칸)</option>
+          <option value="6x5">6 × 5 (29칸 + 빈칸)</option>
+        </select>
+      </div>
+      <div>
+        <label for="imageInput">이미지 업로드</label>
+        <input id="imageInput" type="file" accept="image/*" aria-label="퍼즐 이미지 업로드" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="shuffleBtn">섞기</button>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="previewBtn" class="secondary">원본 보기</button>
+      </div>
+    </div>
+
+    <div class="board-wrap">
+      <section id="board" class="board" aria-label="이미지 퍼즐 보드"></section>
+    </div>
+    <div id="status" class="status" aria-live="polite"></div>
+    <div id="meta" class="meta">이동 횟수: 0 · 맞춘 칸: 0 / 0</div>
+  </main>
+
+  <script>
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const metaEl = document.getElementById('meta');
+    const imageInput = document.getElementById('imageInput');
+    const sizeSelect = document.getElementById('sizeSelect');
+    const shuffleBtn = document.getElementById('shuffleBtn');
+    const previewBtn = document.getElementById('previewBtn');
+
+    const DEFAULT_IMAGE = "data:image/svg+xml;utf8," + encodeURIComponent(`
+      <svg xmlns='http://www.w3.org/2000/svg' width='1000' height='1600' viewBox='0 0 1000 1600'>
+        <defs>
+          <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
+            <stop offset='0%' stop-color='#070b1f'/><stop offset='55%' stop-color='#0b1328'/><stop offset='100%' stop-color='#141414'/>
+          </linearGradient>
+          <filter id='glow'><feGaussianBlur stdDeviation='4' result='b'/><feMerge><feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter>
+        </defs>
+        <rect width='1000' height='1600' fill='url(#g)'/>
+        <text x='110' y='470' font-family='Arial' font-size='120' fill='#ff8a00' filter='url(#glow)'>CATCHTABLE</text>
+        <text x='225' y='760' font-family='Arial' font-size='88' fill='#32ff67' filter='url(#glow)'>Revenue</text>
+        <text x='610' y='760' font-family='Arial' font-size='82' fill='#ff4d4d' filter='url(#glow)'>Deficit</text>
+        <text x='225' y='910' font-family='Arial' font-size='170' fill='#67ff7f' filter='url(#glow)'>8x</text>
+        <text x='610' y='910' font-family='Arial' font-size='170' fill='#ff5f5f' filter='url(#glow)'>7x</text>
+        <rect x='90' y='980' width='820' height='430' rx='36' fill='#f8fafc'/>
+        <rect x='150' y='1260' width='700' height='100' rx='22' fill='#f97316'/>
+      </svg>
+    `);
+
+    let rows = 4;
+    let cols = 5;
+    let total = rows * cols;
+    let empty = total - 1;
+    let imageSrc = DEFAULT_IMAGE;
+    let tiles = [];
+    let moves = 0;
+    let previewOn = false;
+
+    const indexToRC = (idx) => [Math.floor(idx / cols), idx % cols];
+    const isAdjacent = (a, b) => {
+      const [ar, ac] = indexToRC(a);
+      const [br, bc] = indexToRC(b);
+      return Math.abs(ar - br) + Math.abs(ac - bc) === 1;
+    };
+    const isSolved = () => tiles.every((value, idx) => value === idx);
+
+    function getCorrectCount() {
+      return tiles.reduce((count, value, idx) => {
+        if (value === empty) return count;
+        return count + (value === idx ? 1 : 0);
+      }, 0);
+    }
+
+    function setGridSize(sizeValue) {
+      const [c, r] = sizeValue.split('x').map(Number);
+      cols = c;
+      rows = r;
+      total = rows * cols;
+      empty = total - 1;
+      boardEl.style.gridTemplateColumns = `repeat(${cols}, var(--tile-size))`;
+    }
+
+    function render() {
+      boardEl.innerHTML = '';
+
+      tiles.forEach((tileValue, tileIndex) => {
+        const tileBtn = document.createElement('button');
+        tileBtn.className = `tile${tileValue === empty ? ' empty' : ''}`;
+
+        if (tileValue !== empty) {
+          const [srcRow, srcCol] = indexToRC(tileValue);
+          tileBtn.style.backgroundImage = `url('${imageSrc}')`;
+          tileBtn.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+          tileBtn.style.backgroundPosition = `${(srcCol / Math.max(cols - 1, 1)) * 100}% ${(srcRow / Math.max(rows - 1, 1)) * 100}%`;
+          tileBtn.setAttribute('aria-label', `${tileValue + 1}번 이미지 조각`);
+          tileBtn.addEventListener('click', () => moveTile(tileIndex));
+        } else {
+          tileBtn.setAttribute('aria-label', '빈 칸');
+        }
+
+        boardEl.appendChild(tileBtn);
+      });
+
+      const correct = getCorrectCount();
+      metaEl.textContent = `이동 횟수: ${moves} · 맞춘 칸: ${correct} / ${total - 1}`;
+      statusEl.textContent = isSolved() ? '🎉 완료! 최종 이미지를 완성했어요.' : '';
+
+      if (previewOn) {
+        boardEl.style.backgroundImage = `url('${imageSrc}')`;
+        boardEl.style.backgroundSize = 'cover';
+      } else {
+        boardEl.style.backgroundImage = 'none';
+      }
+    }
+
+    function moveTile(tileIndex) {
+      const emptyIndex = tiles.indexOf(empty);
+      if (!isAdjacent(tileIndex, emptyIndex)) return;
+      [tiles[tileIndex], tiles[emptyIndex]] = [tiles[emptyIndex], tiles[tileIndex]];
+      moves += 1;
+      render();
+    }
+
+    function shuffle(times = total * 22) {
+      tiles = Array.from({ length: total }, (_, i) => i);
+      for (let i = 0; i < times; i++) {
+        const emptyIndex = tiles.indexOf(empty);
+        const nextCandidates = [emptyIndex - cols, emptyIndex + cols, emptyIndex - 1, emptyIndex + 1]
+          .filter((idx) => idx >= 0 && idx < total)
+          .filter((idx) => isAdjacent(idx, emptyIndex));
+        const nextIndex = nextCandidates[Math.floor(Math.random() * nextCandidates.length)];
+        [tiles[nextIndex], tiles[emptyIndex]] = [tiles[emptyIndex], tiles[nextIndex]];
+      }
+      moves = 0;
+      statusEl.textContent = '퍼즐을 섞었습니다. 빈칸으로 조각을 밀어 맞춰보세요!';
+      render();
+    }
+
+    sizeSelect.addEventListener('change', () => {
+      setGridSize(sizeSelect.value);
+      shuffle();
+    });
+
+    imageInput.addEventListener('change', (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        imageSrc = String(reader.result);
+        shuffle();
+      };
+      reader.readAsDataURL(file);
+    });
+
+    shuffleBtn.addEventListener('click', () => shuffle());
+
+    previewBtn.addEventListener('click', () => {
+      previewOn = !previewOn;
+      previewBtn.textContent = previewOn ? '원본 숨기기' : '원본 보기';
+      render();
+    });
+
+    setGridSize(sizeSelect.value);
+    shuffle();
+  </script>
+</body>
+</html>
